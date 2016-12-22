@@ -25,8 +25,48 @@ parser.add_argument("destination",  help="Destination of the backup")
 parser.add_argument("--dry-run",  help="Just print the commands to be executed",
                     dest="dry_run", action="store_true")
 parser.add_argument("--keep",  help=
-                    "Number of backups to keep (-1 to keep all backups)",
+                    "Number of backups to keep (keep all backups by default)",
                     type=int, default=-1)
+parser.add_argument("--interval",  help=
+                    "Create new backup every INTERVAL hours (default is 24)",
+                    type=int, default=-1)
+
+
+args_tar_create = OrderedDict([
+    ("mode", "-c"),  # Create
+    ("verbose", "-v"),
+    ("compress", "-z"),  # Gzip
+    ("file", "-f"),  # File to create
+    ("file_path", "{}"),
+    ("directory", "-C"),  # Change to this dir
+    ("directory_path", "{}"),
+    ("pattern", "./{}"),  # Globbing pattern inside dir
+])
+
+# tar -tvzf FILE
+args_tar_list = OrderedDict([
+    ("mode", "-t"),  # List
+    ("verbose", "-v"),
+    ("compress", "-z"),  # Gzip
+    ("file", "-f"),  # File to list
+    ("file_path", "{}"),
+])
+
+args_rsync = OrderedDict([
+    # -a is the same as -rlptgoD
+    # --recursive   recurse into directories
+    # --links       copy symlinks as symlinks
+    # --perms       preserve permissions
+    # --times       preserve times
+    # --group       preserve group
+    # --owner       preserve owner (super-user only)
+    ("archive", "-a"),
+    ("progress", "--progress"),
+    # "exclude": "--exclude",
+    # "exclude_pattern": "{}",
+    ("source", "{}"),
+    ("destination", "{}"),
+])
 
 
 class Backup:
@@ -52,46 +92,28 @@ class Backup:
     now = None
     diff = None
 
-    args = {
-        "tar_create": OrderedDict([
-            ("mode", "-c"),  # Create
-            ("verbose", "-v"),
-            ("compress", "-z"),  # Gzip
-            ("file", "-f"),  # File to create
-            ("file_path", "{}"),
-            ("directory", "-C"),  # Change to this dir
-            ("directory_path", "{}"),
-            ("pattern", "./{}"),  # Globbing pattern inside dir
-        ]),
-        # tar -tvzf FILE
-        "tar_list": OrderedDict([
-            ("mode", "-t"),  # List
-            ("verbose", "-v"),
-            ("compress", "-z"),  # Gzip
-            ("file", "-f"),  # File to list
-            ("file_path", "{}"),
-        ]),
-        "rsync_args": OrderedDict([
-            # -a is the same as -rlptgoD
-            # --recursive   recurse into directories
-            # --links       copy symlinks as symlinks
-            # --perms       preserve permissions
-            # --times       preserve times
-            # --group       preserve group
-            # --owner       preserve owner (super-user only)
-            ("archive", "-a"),
-            ("progress", "--progress"),
-            # "exclude": "--exclude",
-            # "exclude_pattern": "{}",
-            ("source", "{}"),
-            ("destination", "{}"),
-        ])
-    }
-
-    def __init__(self):
+    def __init__(self, source, destination,
+                 dry_run=None,
+                 backups_to_keep=None,
+                 interval=None):
         self.tar = sh.Command("tar")
         self.rsync = sh.Command("rsync")
         self.now = datetime.datetime.utcnow()
+
+        self.source = source
+        self.destination = destination
+
+        if dry_run is not None:
+            self.dry_run = dry_run
+        if backups_to_keep is not None:
+            self.backups_to_keep = backups_to_keep
+        if interval is not None:
+            self.interval = self.HOUR*interval
+
+        self.set_backup_files()
+        if len(self.backup_files) > 0:
+            self.set_last_timestamp()
+            self.set_diff()
 
     @staticmethod
     def get_args(args_dict):
@@ -138,25 +160,28 @@ class Backup:
         ))
 
         # Create new backup before removing previous backups
-        if self.diff > self.interval:
-            tar_create = self.args["tar_create"]
-            tar_create["file_path"] = tar_create["file_path"]\
+        print(0)
+        if self.diff is None or self.diff > self.interval:
+            args_tar_create["file_path"] = args_tar_create["file_path"]\
                 .format(new_backup)
+            print(1)
             if os.path.isdir(self.source):
-                tar_create["directory_path"] = tar_create["directory_path"]\
-                    .format(source_dir)
-                tar_create["pattern"] = tar_create["pattern"]\
+                print(2)
+                args_tar_create["directory_path"] = \
+                    args_tar_create["directory_path"].format(source_dir)
+                args_tar_create["pattern"] = args_tar_create["pattern"]\
                     .format(source_base)
             else:
+                print(3)
                 # TODO Support for file source
                 raise Exception("File source not implemented")
-            tar_create_args = self.get_args(tar_create)
+            args = self.get_args(args_tar_create)
             if self.dry_run:
-                print("tar {}".format(" ".join(tar_create_args)))
+                print("tar {}".format(" ".join(args)))
             else:
-                # TODO Use rsync to implement --no-compress arg
-                # TODO Use rsync to support remote destination
-                self.tar(*tar_create_args)
+                # TODO Support for rsync --no-compress arg
+                # TODO Support for rsync remote destination
+                self.tar(*args)
                 print("Last backup was {} hours ago, new backup created".format(
                     round(self.diff / 60 / 60, 2)))
 
@@ -178,16 +203,11 @@ class Backup:
 
 
 def main():
-    b = Backup()
-
     args = parser.parse_args()
-    b.dry_run = args.dry_run
-    b.backups_to_keep = args.keep
-    b.source = args.source
-    b.destination = args.destination
 
-    b.set_backup_files()
-    b.set_last_timestamp()
-    b.set_diff()
-
+    b = Backup(
+        args.source,
+        args.destination,
+        args.dry_run,
+        args.keep)
     b.run()
