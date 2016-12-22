@@ -7,3 +7,6 @@ Create rolling backups of a file or folder
 
 [pip install from github repo branch](http://stackoverflow.com/a/20101940/639133)
 
+    pip install git+https://github.com/mozey/backup.py.git
+    
+    
