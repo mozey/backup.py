@@ -12,8 +12,11 @@ from collections import OrderedDict
 import sh
 import argparse
 
-__version__ = "0.0.1"
+__version__ = "1.0.0"
 
+BACKUPS_TO_KEEP = -1
+HOUR = 60*60
+BACKUP_INTERVAL = HOUR*24
 
 parser = argparse.ArgumentParser(
     description="""
@@ -24,49 +27,60 @@ parser.add_argument("source",  help="Source path to backup")
 parser.add_argument("destination",  help="Destination of the backup")
 parser.add_argument("--dry-run",  help="Just print the commands to be executed",
                     dest="dry_run", action="store_true")
-parser.add_argument("--keep",  help=
+parser.add_argument("--keep", help=
                     "Number of backups to keep (keep all backups by default)",
-                    type=int, default=-1)
-parser.add_argument("--interval",  help=
+                    type=int, default=BACKUPS_TO_KEEP)
+parser.add_argument("--interval", help=
                     "Create new backup every INTERVAL hours (default is 24)",
-                    type=int, default=-1)
+                    type=int, default=BACKUP_INTERVAL)
 
+PROGRAM = {
+    "tar": {
+        "create": {
+            "args": OrderedDict([
+                ("mode", "-c"),  # Create
+                ("verbose", "-v"),
+                ("compress", "-z"),  # Gzip
+                ("file", "-f"),  # File to create
+                ("file_path", "{}"),
+                ("directory", "-C"),  # Change to this dir
+                ("directory_path", "{}"),
+                ("pattern", "./{}"),  # Globbing pattern inside dir
+            ])
+        },
+        "list": {
+            "args": OrderedDict([
+                ("mode", "-t"),  # List
+                ("verbose", "-v"),
+                ("compress", "-z"),  # Gzip
+                ("file", "-f"),  # File to list
+                ("file_path", "{}"),
+            ])
+        }
+    },
+    "rsync": {
+        "archive": {
+            "args": OrderedDict([
+                # -a is the same as -rlptgoD
+                # --recursive   recurse into directories
+                # --links       copy symlinks as symlinks
+                # --perms       preserve permissions
+                # --times       preserve times
+                # --group       preserve group
+                # --owner       preserve owner (super-user only)
+                ("archive", "-a"),
+                ("progress", "--progress"),
+                # "exclude": "--exclude",
+                # "exclude_pattern": "{}",
+                ("source", "{}"),
+                ("destination", "{}"),
+            ])
+        }
+    },
+}
 
-args_tar_create = OrderedDict([
-    ("mode", "-c"),  # Create
-    ("verbose", "-v"),
-    ("compress", "-z"),  # Gzip
-    ("file", "-f"),  # File to create
-    ("file_path", "{}"),
-    ("directory", "-C"),  # Change to this dir
-    ("directory_path", "{}"),
-    ("pattern", "./{}"),  # Globbing pattern inside dir
-])
-
-# tar -tvzf FILE
-args_tar_list = OrderedDict([
-    ("mode", "-t"),  # List
-    ("verbose", "-v"),
-    ("compress", "-z"),  # Gzip
-    ("file", "-f"),  # File to list
-    ("file_path", "{}"),
-])
-
-args_rsync = OrderedDict([
-    # -a is the same as -rlptgoD
-    # --recursive   recurse into directories
-    # --links       copy symlinks as symlinks
-    # --perms       preserve permissions
-    # --times       preserve times
-    # --group       preserve group
-    # --owner       preserve owner (super-user only)
-    ("archive", "-a"),
-    ("progress", "--progress"),
-    # "exclude": "--exclude",
-    # "exclude_pattern": "{}",
-    ("source", "{}"),
-    ("destination", "{}"),
-])
+LOCAL = 0
+REMOTE = 1
 
 
 class Backup:
@@ -85,17 +99,19 @@ class Backup:
     timestamp_length = 19
     last_timestamp = None
 
-    backups_to_keep = -1  # -1 to keep all backups
-    HOUR = 60*60
-    interval = HOUR*24
+    keep = BACKUPS_TO_KEEP
+    interval = BACKUP_INTERVAL
 
     now = None
     diff = None
 
-    def __init__(self, source, destination,
+    def __init__(self,
+                 source,
+                 destination,
                  dry_run=None,
-                 backups_to_keep=None,
+                 keep=None,
                  interval=None):
+
         self.tar = sh.Command("tar")
         self.rsync = sh.Command("rsync")
         self.now = datetime.datetime.utcnow()
@@ -105,10 +121,10 @@ class Backup:
 
         if dry_run is not None:
             self.dry_run = dry_run
-        if backups_to_keep is not None:
-            self.backups_to_keep = backups_to_keep
+        if keep is not None:
+            self.keep = keep
         if interval is not None:
-            self.interval = self.HOUR*interval
+            self.interval = HOUR*interval
 
         self.set_backup_files()
         if len(self.backup_files) > 0:
@@ -160,37 +176,35 @@ class Backup:
         ))
 
         # Create new backup before removing previous backups
-        print(0)
         if self.diff is None or self.diff > self.interval:
-            args_tar_create["file_path"] = args_tar_create["file_path"]\
+            dict_args = PROGRAM["tar"]["create"]["args"]
+            dict_args["file_path"] = dict_args["file_path"]\
                 .format(new_backup)
-            print(1)
-            if os.path.isdir(self.source):
-                print(2)
-                args_tar_create["directory_path"] = \
-                    args_tar_create["directory_path"].format(source_dir)
-                args_tar_create["pattern"] = args_tar_create["pattern"]\
-                    .format(source_base)
-            else:
-                print(3)
-                # TODO Support for file source
-                raise Exception("File source not implemented")
-            args = self.get_args(args_tar_create)
+
+            dict_args["directory_path"] = \
+                dict_args["directory_path"].format(source_dir)
+            dict_args["pattern"] = dict_args["pattern"]\
+                .format(source_base)
+
+            args = self.get_args(dict_args)
             if self.dry_run:
                 print("tar {}".format(" ".join(args)))
             else:
                 # TODO Support for rsync --no-compress arg
+                # TODO Support for rsync -P (--partial --progress)
                 # TODO Support for rsync remote destination
                 self.tar(*args)
                 print("Last backup was {} hours ago, new backup created".format(
                     round(self.diff / 60 / 60, 2)))
 
+        # Copy backup to destination
+
         # Remove old backups
-        if self.backups_to_keep > -1:
+        if self.keep > -1:
             # Refresh list to include new backup
             self.set_backup_files()
-            if len(self.backup_files) > self.backups_to_keep:
-                for i in range(len(self.backup_files) - self.backups_to_keep):
+            if len(self.backup_files) > self.keep:
+                for i in range(len(self.backup_files) - self.keep):
                     backup_file = self.backup_files[i]
                     if os.path.isdir(backup_file):
                         raise Exception("Removing dir backup not implemented")
@@ -205,9 +219,16 @@ class Backup:
 def main():
     args = parser.parse_args()
 
-    b = Backup(
-        args.source,
-        args.destination,
-        args.dry_run,
-        args.keep)
-    b.run()
+    # b = Backup(
+    #     args.source,
+    #     args.destination,
+    #     args.dry_run,
+    #     args.keep,
+    #     args.interval)
+    # b.run()
+
+    new_backup = "foo"
+    args_tar_create = PROGRAM["tar"]["create"]["args"]
+    args_tar_create["file_path"] = args_tar_create["file_path"] \
+        .format(new_backup)
+    print(args_tar_create)

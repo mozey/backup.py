@@ -2,9 +2,6 @@ import unittest
 import os
 from backup import backup
 
-# https://docs.python.org/3/library/unittest.html
-# Run individual tests like this:
-# python test.py Tests.testSyncFolder
 
 verbose = False
 temp_dir = "/tmp"

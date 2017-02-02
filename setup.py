@@ -19,7 +19,7 @@ setup(
     name="backup.py",
     packages=["backup"],
     entry_points={
-        "console_scripts": ['bootstrap = backup.backup:main']
+        "console_scripts": ['backup.py = backup.backup:main']
     },
     version=version,
     description="Create rolling backups of a file or folder",
@@ -28,6 +28,6 @@ setup(
     author_email="christiaanvanzyl@gmail.com",
     url="https://github.com/mozey/backup.py",
     install_requires=[
-        "sh==1.11"
+        "sh>=1.11"
     ]
 )
