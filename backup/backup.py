@@ -12,7 +12,7 @@ from collections import OrderedDict
 import sh
 import argparse
 
-__version__ = "1.0.0"
+__version__ = "0.0.1"
 
 BACKUPS_TO_KEEP = -1
 HOUR = 60*60
