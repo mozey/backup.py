@@ -69,7 +69,11 @@ PROGRAM = {
                 # --group       preserve group
                 # --owner       preserve owner (super-user only)
                 ("archive", "-a"),
-                ("progress", "--progress"),
+                ("verbose", "-v"),  # increase verbosity
+                ("compress", "-z"),  # compress file data during the transfer
+                # Do not delete partially transferred files, show progress
+                # ("partial_progress", "-P"),
+                ("progress", "--progress"),  # show progress
                 # "exclude": "--exclude",
                 # "exclude_pattern": "{}",
                 ("source", "{}"),
@@ -82,7 +86,6 @@ PROGRAM = {
 LOCAL = 0
 REMOTE = 1
 
-
 class Backup:
 
     dry_run = False
@@ -91,7 +94,6 @@ class Backup:
     tmp = "/tmp"
     source = None
     destination = None
-    # TODO Support backup file formats other than ".tar.gz"
     backup_file_format = ".tar.gz"
     backup_files = None
 
@@ -105,16 +107,16 @@ class Backup:
     now = None
     diff = None
 
-    def __init__(self,
-                 source,
-                 destination,
-                 dry_run=None,
-                 keep=None,
-                 interval=None):
-
+    def __init__(self):
         self.tar = sh.Command("tar")
         self.rsync = sh.Command("rsync")
         self.now = datetime.datetime.utcnow()
+
+    def parse_args(self, source,
+                   destination,
+                   dry_run=None,
+                   keep=None,
+                   interval=None):
 
         self.source = source
         self.destination = destination
@@ -159,7 +161,15 @@ class Backup:
             datetime.datetime.strptime(self.last_timestamp,
                                        self.timestamp_format).timetuple()
         )
-        self.diff = self.now.timestamp() - modified
+        ts_now = datetime.datetime.utcnow().timestamp()
+        self.diff = ts_now - modified
+
+    def new_filename(self):
+        return "{}-{}{}".format(
+            self.prefix,
+            self.now.strftime(self.timestamp_format),
+            self.backup_file_format
+        )
 
     def run(self):
         if self.source[-1:] == os.path.sep:
@@ -170,10 +180,7 @@ class Backup:
             source_dir = os.path.dirname(self.source)
             source_base = os.path.basename(self.source)
 
-        new_backup = os.path.join(self.destination, "bak-{}{}".format(
-            datetime.datetime.strftime(self.now, self.timestamp_format),
-            self.backup_file_format
-        ))
+        new_backup = os.path.join(self.destination, self.new_filename())
 
         # Create new backup before removing previous backups
         if self.diff is None or self.diff > self.interval:
@@ -190,9 +197,6 @@ class Backup:
             if self.dry_run:
                 print("tar {}".format(" ".join(args)))
             else:
-                # TODO Support for rsync --no-compress arg
-                # TODO Support for rsync -P (--partial --progress)
-                # TODO Support for rsync remote destination
                 self.tar(*args)
                 print("Last backup was {} hours ago, new backup created".format(
                     round(self.diff / 60 / 60, 2)))
@@ -210,7 +214,6 @@ class Backup:
                         raise Exception("Removing dir backup not implemented")
                     else:
                         if self.dry_run:
-                            # TODO Use sh.rm instead?
                             print("os.remove {}".format(backup_file))
                         else:
                             os.remove(backup_file)
@@ -219,16 +222,16 @@ class Backup:
 def main():
     args = parser.parse_args()
 
-    # b = Backup(
-    #     args.source,
-    #     args.destination,
-    #     args.dry_run,
-    #     args.keep,
-    #     args.interval)
-    # b.run()
+    b = Backup()
+    b.parse_args(args.source,
+                 args.destination,
+                 args.dry_run,
+                 args.keep,
+                 args.interval)
+    b.run()
 
-    new_backup = "foo"
-    args_tar_create = PROGRAM["tar"]["create"]["args"]
-    args_tar_create["file_path"] = args_tar_create["file_path"] \
-        .format(new_backup)
-    print(args_tar_create)
+    # new_backup = "foo"
+    # args_tar_create = PROGRAM["tar"]["create"]["args"]
+    # args_tar_create["file_path"] = args_tar_create["file_path"] \
+    #     .format(new_backup)
+    # print(args_tar_create)
