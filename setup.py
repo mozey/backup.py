@@ -8,7 +8,7 @@ from setuptools import setup
 
 import sys
 
-if sys.version_info >= (3, 0):
+if sys.version_info < (3, 0):
     raise Exception("Requires python3")
 
 version = re.search(
