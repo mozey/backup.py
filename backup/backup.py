@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 BACKUPS_TO_KEEP = -1
 HOUR = 60*60
 BACKUP_INTERVAL = HOUR*24
+BACKUP_NAME_PREFIX = "bak"
 
 parser = argparse.ArgumentParser(
     description="""
@@ -37,6 +38,9 @@ parser.add_argument("--keep", help=
 parser.add_argument("--interval", help=
                     "Create new backup every INTERVAL hours (default is 24)",
                     type=int, default=BACKUP_INTERVAL)
+parser.add_argument("--name", help=
+                    "Naming prefix for backup file",
+                    type=str, default=BACKUP_NAME_PREFIX)
 
 
 def get_params():
@@ -96,7 +100,7 @@ class Backup:
 
     dry_run = False
 
-    prefix = "bak"
+    prefix = BACKUP_NAME_PREFIX
     tmp = "/tmp"
     source = None
     destination = None
@@ -122,7 +126,8 @@ class Backup:
                    destination,
                    dry_run=None,
                    keep=None,
-                   interval=None):
+                   interval=None,
+                   name=None):
 
         self.source = source
         self.destination = destination
@@ -133,6 +138,8 @@ class Backup:
             self.keep = keep
         if interval is not None:
             self.interval = HOUR*interval
+        if name is not None:
+            self.prefix = name
 
         self.set_backup_files()
         if len(self.backup_files) > 0:
@@ -252,5 +259,6 @@ def main():
                  args.destination,
                  args.dry_run,
                  args.keep,
-                 args.interval)
+                 args.interval,
+                 args.name)
     b.run()

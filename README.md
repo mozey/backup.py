@@ -10,7 +10,7 @@ Create rolling backups of a file or folder
 Local only
 
     # Run from source
-    backupy/run_back.py --dry-run backupy/test_data /tmp
+    run_back.py --dry-run backupy/test_data /tmp
 
     # If installed with pip, see below
     backupy --dry-run backupy/test_data /tmp 

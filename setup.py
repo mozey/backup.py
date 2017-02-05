@@ -8,6 +8,7 @@ from setuptools import setup
 
 import sys
 
+# TODO Better way to do this?
 if sys.version_info < (3, 0):
     raise Exception("Requires python3")
 
