@@ -11,8 +11,12 @@ import time
 from collections import OrderedDict
 import sh
 import argparse
+import logging
+import sys
 
 __version__ = "0.0.1"
+
+logger = logging.getLogger(__name__)
 
 BACKUPS_TO_KEEP = -1
 HOUR = 60*60
@@ -34,57 +38,59 @@ parser.add_argument("--interval", help=
                     "Create new backup every INTERVAL hours (default is 24)",
                     type=int, default=BACKUP_INTERVAL)
 
-PROGRAM = {
-    "tar": {
-        "create": {
-            "args": OrderedDict([
-                ("mode", "-c"),  # Create
-                ("verbose", "-v"),
-                ("compress", "-z"),  # Gzip
-                ("file", "-f"),  # File to create
-                ("file_path", "{}"),
-                ("directory", "-C"),  # Change to this dir
-                ("directory_path", "{}"),
-                ("pattern", "./{}"),  # Globbing pattern inside dir
-            ])
-        },
-        "list": {
-            "args": OrderedDict([
-                ("mode", "-t"),  # List
-                ("verbose", "-v"),
-                ("compress", "-z"),  # Gzip
-                ("file", "-f"),  # File to list
-                ("file_path", "{}"),
-            ])
-        }
-    },
-    "rsync": {
-        "archive": {
-            "args": OrderedDict([
-                # -a is the same as -rlptgoD
-                # --recursive   recurse into directories
-                # --links       copy symlinks as symlinks
-                # --perms       preserve permissions
-                # --times       preserve times
-                # --group       preserve group
-                # --owner       preserve owner (super-user only)
-                ("archive", "-a"),
-                ("verbose", "-v"),  # increase verbosity
-                ("compress", "-z"),  # compress file data during the transfer
-                # Do not delete partially transferred files, show progress
-                # ("partial_progress", "-P"),
-                ("progress", "--progress"),  # show progress
-                # "exclude": "--exclude",
-                # "exclude_pattern": "{}",
-                ("source", "{}"),
-                ("destination", "{}"),
-            ])
-        }
-    },
-}
+
+def get_params():
+    params = OrderedDict()
+    params["tar"] = OrderedDict()
+
+    params["tar"]["create"] = OrderedDict()
+    param = OrderedDict()
+    param["mode"] = "-c"  # Create
+    param["verbose"] = "-v"
+    param["compress"] = "-z"  # Gzip
+    param["file"] = "-f"  # File to create
+    param["file_path"] = "{}"
+    param["directory"] = "-C"  # Change to this dir
+    param["directory_path"] = "{}"
+    param["pattern"] = "./{}"  # Globbing pattern inside dir
+    params["tar"]["create"]["args"] = param
+
+    params["tar"]["list"] = OrderedDict()
+    param = OrderedDict()
+    param["mode"] = "-t"  # List
+    param["verbose"] = "-v"
+    param["compress"] = "-z"  # Gzip
+    param["file"] = "-f"  # File to list
+    param["file_path"] = "{}"
+    params["tar"]["list"]["args"] = param
+
+    params["rsync"] = OrderedDict()
+
+    params["rsync"]["archive"] = OrderedDict()
+    param = OrderedDict()
+    # -a is the same as -rlptgoD
+    # --recursive   recurse into directories
+    # --links       copy symlinks as symlinks
+    # --perms       preserve permissions
+    # --times       preserve times
+    # --group       preserve group
+    # --owner       preserve owner (super-user only)
+    param["archive"] = "-a"
+    param["verbose"] = "-v"  # increase verbosity
+    param["compress"] = "-z"  # compress file data during the transfer
+    # Do not delete partially transferred files, show progress
+    # param["partial_progress"] = "-P"
+    param["progress"] = "--progress"  # show progress
+    # param["exclude"] = "--exclude"
+    # param["exclude_pattern"] = "{}"
+    param["source"] = "{}"
+    param["destination"] = "{}"
+    params["rsync"]["archive"]["args"] = param
+    return params
 
 LOCAL = 0
 REMOTE = 1
+
 
 class Backup:
 
@@ -134,7 +140,7 @@ class Backup:
             self.set_diff()
 
     @staticmethod
-    def get_args(args_dict):
+    def dict_to_list(args_dict):
         """
         Convert args_dict to list
         """
@@ -171,35 +177,50 @@ class Backup:
             self.backup_file_format
         )
 
-    def run(self):
-        if self.source[-1:] == os.path.sep:
-            # Strip trailing slash otherwise os.path.dirname breaks
-            source_dir = os.path.dirname(self.source[:-1])
-            source_base = os.path.basename(self.source[:-1])
+    def create_new_backup(self, destination, filename):
+        source_dir = os.path.dirname(self.source)
+        source_base = os.path.basename(self.source)
+        # Strip trailing slash otherwise os.path.dirname breaks
+        source_dir = source_dir.rstrip(os.path.sep)
+        source_base = source_base.rstrip(os.path.sep)
+
+        new_backup = os.path.join(destination, filename)
+
+        params = get_params()
+        args = params["tar"]["create"]["args"]
+        args["file_path"] = str(args["file_path"]) \
+            .format(new_backup)
+
+        args["directory_path"] = \
+            str(args["directory_path"]).format(source_dir)
+        args["pattern"] = str(args["pattern"]) \
+            .format(source_base)
+
+        if self.dry_run:
+            logger.info("tar {}".format(" ".join(self.dict_to_list(args))))
         else:
-            source_dir = os.path.dirname(self.source)
-            source_base = os.path.basename(self.source)
+            self.tar(*self.dict_to_list(args))
+            if self.diff is not None:
+                logger.info("Last backup was {} hours ago, new backup created".format(
+                    round(self.diff / 60 / 60, 2)))
+            else:
+                logger.info("New backup created: {}".format(new_backup))
 
-        new_backup = os.path.join(self.destination, self.new_filename())
+    def list_backup(self, filepath):
+        params = get_params()
+        # TODO Rather use diff, is it available on OSX?
+        # http://unix.stackexchange.com/a/82644
+        args = params["tar"]["list"]["args"]
+        args["file_path"] = filepath
+        return self.tar(*self.dict_to_list(args))
 
+    def run(self):
         # Create new backup before removing previous backups
         if self.diff is None or self.diff > self.interval:
-            dict_args = PROGRAM["tar"]["create"]["args"]
-            dict_args["file_path"] = dict_args["file_path"]\
-                .format(new_backup)
-
-            dict_args["directory_path"] = \
-                dict_args["directory_path"].format(source_dir)
-            dict_args["pattern"] = dict_args["pattern"]\
-                .format(source_base)
-
-            args = self.get_args(dict_args)
-            if self.dry_run:
-                print("tar {}".format(" ".join(args)))
-            else:
-                self.tar(*args)
-                print("Last backup was {} hours ago, new backup created".format(
-                    round(self.diff / 60 / 60, 2)))
+            self.create_new_backup(self.destination, self.new_filename())
+        else:
+            logger.info("No backup created: {}".format(self.source))
+            pass
 
         # Copy backup to destination
 
@@ -214,13 +235,17 @@ class Backup:
                         raise Exception("Removing dir backup not implemented")
                     else:
                         if self.dry_run:
-                            print("os.remove {}".format(backup_file))
+                            logger.info("os.remove {}".format(backup_file))
                         else:
                             os.remove(backup_file)
 
 
 def main():
     args = parser.parse_args()
+
+    logger.setLevel(logging.INFO)
+    stream_handler = logging.StreamHandler(sys.stdout)
+    logger.addHandler(stream_handler)
 
     b = Backup()
     b.parse_args(args.source,
@@ -229,9 +254,3 @@ def main():
                  args.keep,
                  args.interval)
     b.run()
-
-    # new_backup = "foo"
-    # args_tar_create = PROGRAM["tar"]["create"]["args"]
-    # args_tar_create["file_path"] = args_tar_create["file_path"] \
-    #     .format(new_backup)
-    # print(args_tar_create)
