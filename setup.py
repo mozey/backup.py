@@ -6,6 +6,11 @@
 import re
 from setuptools import setup
 
+import sys
+
+if sys.version_info >= (3, 0):
+    raise Exception("Requires python3")
+
 version = re.search(
     '^__version__\s*=\s*"(.*)"',
     open('backup/backup.py').read(),
