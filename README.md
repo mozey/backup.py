@@ -1,13 +1,4 @@
-# WARNING
-
-Under construction. Was going to use this to create backups of text file based
-system like `taskwarrior` but using git on my home dir is more convenient.
- 
-That said, this project serves as an example of the layout for CLI python util
-that can be published to PYPI or installed directly from github.
-
-
-# backup.py
+# backupy
 
 Wrapper around tar, ssh and rsync 
 
@@ -18,25 +9,25 @@ Create rolling backups of a file or folder
 
 Local only
 
-    backup.py --dry-run /my/folder /backups
+    # Run from source
+    backupy/run_back.py --dry-run backupy/test_data /tmp
 
-Local to remote
+    # If installed with pip, see below
+    backupy --dry-run backupy/test_data /tmp 
+
+TODO Local to remote
     
-    backup.py --dry-run /my/folder user@server:/backups
+    backupy --dry-run /my/folder user@server:/backups
 
-Remote to local
+TODO Remote to local
 
-    backup.py --dry-run user@server:/backups /my/folder 
+    backupy --dry-run user@server:/backups /my/folder 
 
 
 # Install
 
 [pip install from github repo branch](http://stackoverflow.com/a/20101940/639133)
 
-    pip install git+https://github.com/mozey/backup.py.git
+    pip install git+https://github.com/mozey/backupy.git
 
-
-# Configuration
-
-    TODO
 
