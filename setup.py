@@ -8,7 +8,7 @@ from setuptools import setup
 
 version = re.search(
     '^__version__\s*=\s*"(.*)"',
-    open('backupy/backup.py').read(),
+    open('backup/backup.py').read(),
     re.M
 ).group(1)
 
@@ -17,9 +17,9 @@ with open("README.md", "rb") as f:
 
 setup(
     name="backupy",
-    packages=["backupy"],
+    packages=["backup"],
     entry_points={
-        "console_scripts": ['backupy = backupy.backup:main']
+        "console_scripts": ['backupy = backup.backup:main']
     },
     version=version,
     description="Create rolling backups of a file or folder",
